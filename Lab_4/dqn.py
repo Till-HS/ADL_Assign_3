@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import gc
 
 # Imports all our hyperparameters from the other file
 from hyperparams import Hyperparameters as params
@@ -53,15 +54,17 @@ def make_env(env_id, seed, idx, capture_video, run_name):
 class QNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
-        # TODO: Deinfe your network (agent)
+        # TODO: Define your network (agent)
         # Look at Section 4.1 in the paper for help: https://arxiv.org/pdf/1312.5602v1.pdf
-        self.network = nn.Sequential(
-
-
-
-
-
-            nn.Linear(512, env.single_action_space.n)                
+        self.network = nn.Sequential( #bs, 84, 84, 4
+            nn.Conv2d(4, 16, 8, 4), #bs, 20, 20, 16
+            nn.LeakyReLU(),
+            nn.Conv2d(16, 32, 4, 2), #bs, 9, 9, 32
+            nn.LeakyReLU(),
+            nn.Flatten(), #bs, 11*11*32
+            nn.Linear(9*9*32 ,512), #bs, 512
+            nn.LeakyReLU(),
+            nn.Linear(512, env.single_action_space.n) #bs, 4
         )
 
     def forward(self, x):
@@ -100,7 +103,7 @@ if __name__ == "__main__":
         envs.single_observation_space,
         envs.single_action_space,
         device,
-        optimize_memory_usage=False,
+        optimize_memory_usage=True,
         handle_timeout_termination=True,
     )
 
@@ -110,9 +113,9 @@ if __name__ == "__main__":
         epsilon = linear_schedule(params.start_e, params.end_e, params.exploration_fraction * params.total_timesteps, global_step)
 
         if random.random() < epsilon:
-            actions = # TODO: sample a random action from the environment 
+            actions = np.array([int(random.random()*4)]) # TODO: sample a random action from the environment
         else:
-            q_values = # TODO: get q_values from the network you defined, what should the network receive as input?
+            q_values = q_network.forward(torch.from_numpy(obs).to(device)) # TODO: get q_values from the network you defined, what should the network receive as input?
             actions = torch.argmax(q_values, dim=1).cpu().numpy()
 
         # Take a step in the environment
@@ -144,11 +147,10 @@ if __name__ == "__main__":
 
                 with torch.no_grad():
                     # Now we calculate the y_j for non-terminal phi.
-                    target_max, _ = # TODO: Calculate max Q
-                    td_target = # TODO: Calculate the td_target (y_j)
-
-                old_val = q_network(?).gather(1, data.actions).squeeze()
-                loss = F.mse_loss(?, ?) 
+                    target_max = target_network.forward(data.next_observations).max(1)[0] # TODO: Calculate max Q
+                    td_target = data.rewards.view(-1) + torch.mul(params.gamma,target_max) # TODO: Calculate the td_target (y_j)
+                old_val = q_network(data.observations).gather(1, data.actions.long())
+                loss = F.mse_loss(old_val.view(-1), td_target.view(-1))
 
                 # perform our gradient decent step
                 optimizer.zero_grad()
@@ -161,6 +163,9 @@ if __name__ == "__main__":
                     target_network_param.data.copy_(
                         params.tau * q_network_param.data + (1.0 - params.tau) * target_network_param.data
                     )
+        if global_step % 5000 == 0:
+            gc.collect()
+            torch.cuda.empty_cache()
 
     if params.save_model:
         model_path = f"runs/{run_name}/{params.exp_name}_model"

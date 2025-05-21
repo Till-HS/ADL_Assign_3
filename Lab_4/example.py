@@ -9,14 +9,16 @@
 import gym
 import time
 
-env = gym.make("ALE/Breakout-v5", render_mode="human")
-observation, info = env.reset(seed=42)
+env = gym.make("ALE/Breakout-v5", render_mode="rgb_array")
+observation = env.reset(seed=42)
+print(observation.shape)
 
 for _ in range(1000):
    action = env.action_space.sample()  # this is where you would insert your policy
-   observation, reward, terminated, truncated, info = env.step(action)
+   observation, reward, terminated, truncated = env.step(action)
+   print(reward)
 
    if terminated or truncated:
-      observation, info = env.reset()
+      observation = env.reset()
 env.close()
 print("Executed environment successfully.")
